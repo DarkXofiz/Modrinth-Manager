@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "modrinth-manager",
+  "version": "${version}",
+  "name": "Modrinth Manager",
+  "description": "In-game Modrinth browser: search, preview and one-click install mods, shaderpacks and resourcepacks without leaving the game.",
+  "authors": [
+    "Ritmada"
+  ],
+  "contact": {
+    "homepage": "https://github.com/Ritmada/modrinth-manager",
+    "sources": "https://github.com/Ritmada/modrinth-manager",
+    "issues": "https://github.com/Ritmada/modrinth-manager/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/modrinth-manager/icon/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.ritmada.modrinthmanager.ModrinthManagerClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+    "minecraft": ">=1.20.1 <1.21",
+    "java": ">=17"
+  }
+}
