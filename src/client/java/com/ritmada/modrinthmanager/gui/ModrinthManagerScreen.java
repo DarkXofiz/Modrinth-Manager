@@ -3,6 +3,7 @@ package com.ritmada.modrinthmanager.gui;
 import com.ritmada.modrinthmanager.api.Category;
 import com.ritmada.modrinthmanager.api.ModrinthClient;
 import com.ritmada.modrinthmanager.api.ModrinthModels;
+import com.ritmada.modrinthmanager.util.ChristmasMusic;
 import com.ritmada.modrinthmanager.util.SnowOverlay;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -85,6 +86,7 @@ public final class ModrinthManagerScreen extends Screen {
         addDrawableChild(detailPanel.createInstallButton());
 
         triggerSearch(true);
+        ChristmasMusic.playIfNotRunning();
     }
 
     private void switchCategory(Category category) {
@@ -173,6 +175,7 @@ public final class ModrinthManagerScreen extends Screen {
 
     @Override
     public void close() {
+        ChristmasMusic.stop();
         if (client != null) client.setScreen(parent);
     }
 

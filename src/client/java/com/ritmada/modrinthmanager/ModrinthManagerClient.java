@@ -1,6 +1,7 @@
 package com.ritmada.modrinthmanager;
 
 import com.ritmada.modrinthmanager.gui.ModrinthManagerScreen;
+import com.ritmada.modrinthmanager.util.ModSounds;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -19,6 +20,8 @@ public final class ModrinthManagerClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        ModSounds.init();
+
         openMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.modrinth-manager.open_menu",
                 InputUtil.Type.KEYSYM,

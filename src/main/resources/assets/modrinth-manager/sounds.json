@@ -1,0 +1,11 @@
+{
+  "christmas_theme": {
+    "category": "master",
+    "sounds": [
+      {
+        "name": "modrinth-manager:christmas_theme",
+        "stream": true
+      }
+    ]
+  }
+}
