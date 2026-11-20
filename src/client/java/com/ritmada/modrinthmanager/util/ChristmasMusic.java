@@ -26,9 +26,12 @@ public final class ChristmasMusic extends MovingSoundInstance {
 
     @Override
     public void tick() {
-        if (stopRequested) {
-            this.done = true;
-        }
+        // no per-tick animation needed; isDone() below is what actually stops playback
+    }
+
+    @Override
+    public boolean isDone() {
+        return stopRequested;
     }
 
     public static void playIfNotRunning() {
