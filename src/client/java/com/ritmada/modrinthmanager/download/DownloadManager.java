@@ -27,7 +27,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class DownloadManager {
 
-    private static final HttpClient HTTP = HttpClient.newHttpClient();
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
 
     // projectId -> in-flight/last progress, consumed by the GUI for progress bars
     private static final Map<String, DownloadProgress> PROGRESS = new ConcurrentHashMap<>();
@@ -79,10 +81,14 @@ public final class DownloadManager {
                 } finally {
                     Files.deleteIfExists(tmp);
                 }
-            } catch (IOException | NoSuchAlgorithmException e) {
-                progress.markFailed(e.getMessage());
-                ModrinthClient.logError("download failed for " + version.projectId, e);
-                return DownloadResult.failure(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            } catch (Exception e) {
+                // broad on purpose: any failure here (IO, checksum, bad URI, permissions, an
+                // unexpected runtime exception from a third-party API quirk) must come back as
+                // a DownloadResult.Err with a real message instead of blowing up the future.
+                String message = e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : "");
+                progress.markFailed(message);
+                ModrinthClient.logError("download failed for " + version.projectId, e); // full stack trace goes to latest.log
+                return DownloadResult.failure(message);
             }
         }, ModrinthClient.IO);
     }

@@ -18,12 +18,16 @@ import java.util.function.Consumer;
  */
 public final class ResultListWidget {
 
-    private static final int ROW_HEIGHT = 34;
+    private static final int ROW_HEIGHT = 36;
+    private static final int SCROLLBAR_WIDTH = 6;
+    private static final int SCROLLBAR_HIT_PADDING = 4; // grab area is wider than the drawn bar
 
     private final List<ModrinthModels.SearchHit> items = new ArrayList<>();
     private int x, y, width, height;
     private double scroll;
     private int selectedIndex = -1;
+    private boolean draggingScrollbar;
+    private float dragGrabOffset; // where inside the thumb the drag started, so it doesn't "jump"
     private Consumer<ModrinthModels.SearchHit> onSelect = hit -> {
     };
 
@@ -46,6 +50,7 @@ public final class ResultListWidget {
     }
 
     public void render(DrawContext context, int mouseX, int mouseY, Theme theme) {
+        context.fill(x, y, x + width, y + height, theme.panelLight());
         context.enableScissor(x, y, x + width, y + height);
 
         int rowY = y - (int) scroll;
@@ -54,57 +59,101 @@ public final class ResultListWidget {
             int top = rowY + i * ROW_HEIGHT;
             if (top + ROW_HEIGHT < y || top > y + height) continue;
 
-            boolean hovered = mouseX >= x && mouseX <= x + width && mouseY >= top && mouseY <= top + ROW_HEIGHT;
+            boolean hovered = !draggingScrollbar && mouseX >= x && mouseX <= x + width && mouseY >= top && mouseY <= top + ROW_HEIGHT;
             boolean selected = i == selectedIndex;
 
             if (selected) {
-                context.fill(x, top, x + width, top + ROW_HEIGHT, theme.accentDim());
+                context.fill(x, top, x + width, top + ROW_HEIGHT - 1, theme.accentDim());
+                context.fill(x, top, x + 3, top + ROW_HEIGHT - 1, theme.accent());
             } else if (hovered) {
-                context.fill(x, top, x + width, top + ROW_HEIGHT, theme.rowHover());
+                context.fill(x, top, x + width, top + ROW_HEIGHT - 1, theme.rowHover());
             }
+            // thin separator so rows read as distinct cards rather than one grey slab
+            context.fill(x + 4, top + ROW_HEIGHT - 1, x + width - 4, top + ROW_HEIGHT, theme.border());
 
-            var icon = IconCache.get(hit.projectId, hit.iconUrl);
+            IconCache.Handle icon = IconCache.get(hit.projectId, hit.iconUrl);
             int iconSize = 24;
-            context.drawTexture(icon, x + 6, top + (ROW_HEIGHT - iconSize) / 2, 0, 0, iconSize, iconSize, iconSize, iconSize);
+            int iconX = x + 8;
+            int iconY = top + (ROW_HEIGHT - iconSize) / 2 - 1;
+            context.fill(iconX - 1, iconY - 1, iconX + iconSize + 1, iconY + iconSize + 1, theme.border());
+            context.drawTexture(icon.id(), iconX, iconY, 0, 0, iconSize, iconSize, icon.width(), icon.height());
 
-            int textX = x + 6 + iconSize + 8;
+            int textX = iconX + iconSize + 10;
             context.drawText(theme.textRenderer(), Text.literal(hit.title).formatted(Formatting.BOLD),
-                    textX, top + 4, theme.text(), false);
+                    textX, top + 5, theme.text(), false);
 
             String desc = hit.description == null ? "" : hit.description;
             int maxDescWidth = width - (textX - x) - 10;
             Text trimmed = Text.literal(theme.textRenderer().trimToWidth(desc, maxDescWidth));
-            context.drawText(theme.textRenderer(), trimmed, textX, top + 16, theme.muted(), false);
+            context.drawText(theme.textRenderer(), trimmed, textX, top + 17, theme.muted(), false);
 
             String downloads = formatDownloads(hit.downloads);
             int dlWidth = theme.textRenderer().getWidth(downloads);
             context.drawText(theme.textRenderer(), Text.literal(downloads),
-                    x + width - dlWidth - 8, top + 4, theme.accent(), false);
+                    x + width - dlWidth - 10, top + 5, theme.accent(), false);
         }
 
         context.disableScissor();
-        drawScrollbar(context, theme);
+        drawScrollbar(context, theme, mouseX, mouseY);
     }
 
-    private void drawScrollbar(DrawContext context, Theme theme) {
-        int contentHeight = items.size() * ROW_HEIGHT;
-        if (contentHeight <= height) return;
+    private int contentHeight() {
+        return items.size() * ROW_HEIGHT;
+    }
 
-        int trackX = x + width - 4;
-        context.fill(trackX, y, trackX + 3, y + height, theme.border());
+    private int maxScroll() {
+        return Math.max(0, contentHeight() - height);
+    }
 
-        float visibleRatio = (float) height / contentHeight;
-        int barHeight = Math.max(12, (int) (height * visibleRatio));
-        int maxScroll = contentHeight - height;
+    private void drawScrollbar(DrawContext context, Theme theme, int mouseX, int mouseY) {
+        int maxScroll = maxScroll();
+        if (maxScroll <= 0) return;
+
+        int trackX = x + width - SCROLLBAR_WIDTH - 2;
+        context.fill(trackX, y, trackX + SCROLLBAR_WIDTH, y + height, theme.panel());
+
+        int barHeight = thumbHeight();
+        int barY = thumbY();
+        boolean hoveredThumb = mouseX >= trackX - SCROLLBAR_HIT_PADDING && mouseX <= trackX + SCROLLBAR_WIDTH + SCROLLBAR_HIT_PADDING
+                && mouseY >= barY && mouseY <= barY + barHeight;
+
+        int color = draggingScrollbar || hoveredThumb ? theme.snowWhite() : theme.accent();
+        context.fill(trackX, barY, trackX + SCROLLBAR_WIDTH, barY + barHeight, color);
+    }
+
+    private int thumbHeight() {
+        float visibleRatio = (float) height / contentHeight();
+        return Math.max(14, (int) (height * visibleRatio));
+    }
+
+    private int thumbY() {
+        int maxScroll = maxScroll();
         float scrollRatio = maxScroll > 0 ? (float) (scroll / maxScroll) : 0;
-        int barY = y + (int) ((height - barHeight) * scrollRatio);
-
-        context.fill(trackX, barY, trackX + 3, barY + barHeight, theme.accent());
+        return y + (int) ((height - thumbHeight()) * scrollRatio);
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button != 0) return false;
         if (mouseX < x || mouseX > x + width || mouseY < y || mouseY > y + height) return false;
+
+        int maxScroll = maxScroll();
+        if (maxScroll > 0) {
+            int trackX = x + width - SCROLLBAR_WIDTH - 2;
+            if (mouseX >= trackX - SCROLLBAR_HIT_PADDING && mouseX <= trackX + SCROLLBAR_WIDTH + SCROLLBAR_HIT_PADDING) {
+                int barY = thumbY();
+                int barHeight = thumbHeight();
+                if (mouseY >= barY && mouseY <= barY + barHeight) {
+                    draggingScrollbar = true;
+                    dragGrabOffset = (float) (mouseY - barY);
+                } else {
+                    // clicked the track above/below the thumb: jump the thumb there directly
+                    draggingScrollbar = true;
+                    dragGrabOffset = barHeight / 2f;
+                    dragScrollTo(mouseY);
+                }
+                return true;
+            }
+        }
 
         int relativeY = (int) (mouseY - y + scroll);
         int index = relativeY / ROW_HEIGHT;
@@ -116,10 +165,28 @@ public final class ResultListWidget {
         return false;
     }
 
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (!draggingScrollbar) return false;
+        dragScrollTo(mouseY);
+        return true;
+    }
+
+    public void mouseReleased() {
+        draggingScrollbar = false;
+    }
+
+    private void dragScrollTo(double mouseY) {
+        int maxScroll = maxScroll();
+        if (maxScroll <= 0) return;
+        int barHeight = thumbHeight();
+        float targetThumbTop = (float) (mouseY - y - dragGrabOffset);
+        float ratio = targetThumbTop / Math.max(1, height - barHeight);
+        scroll = Math.max(0, Math.min(maxScroll, ratio * maxScroll));
+    }
+
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         if (mouseX < x || mouseX > x + width || mouseY < y || mouseY > y + height) return false;
-        int contentHeight = items.size() * ROW_HEIGHT;
-        int maxScroll = Math.max(0, contentHeight - height);
+        int maxScroll = maxScroll();
         scroll = Math.max(0, Math.min(maxScroll, scroll - amount * 18));
         return true;
     }

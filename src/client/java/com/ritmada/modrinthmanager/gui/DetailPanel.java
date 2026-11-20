@@ -108,25 +108,40 @@ public final class DetailPanel {
         }
 
         int pad = 12;
-        var icon = IconCache.get(current.projectId, current.iconUrl);
-        context.drawTexture(icon, x + pad, y + pad, 0, 0, 48, 48, 48, 48);
+        int lineHeight = theme.textRenderer().fontHeight + 2;
+
+        IconCache.Handle icon = IconCache.get(current.projectId, current.iconUrl);
+        context.fill(x + pad - 1, y + pad - 1, x + pad + 49, y + pad + 49, theme.border());
+        context.drawTexture(icon.id(), x + pad, y + pad, 0, 0, 48, 48, icon.width(), icon.height());
 
         context.drawText(theme.textRenderer(), Text.literal(current.title).formatted(Formatting.BOLD),
                 x + pad + 56, y + pad, theme.text(), false);
         context.drawText(theme.textRenderer(), Text.literal("by " + current.author).formatted(Formatting.ITALIC),
                 x + pad + 56, y + pad + 12, theme.muted(), false);
 
-        int descY = y + pad + 60;
+        int dividerY = y + pad + 60;
+        context.fill(x + pad, dividerY, x + width - pad, dividerY + 1, theme.border());
+
+        // status block is wrapped (up to 3 lines) and anchored just above the button, so a
+        // long install-failure message is fully readable instead of getting clipped to one line
+        int buttonTop = y + height - 28;
+        int statusMaxWidth = width - pad * 2;
+        List<OrderedText> statusLines = theme.textRenderer().wrapLines(Text.literal(statusLine), statusMaxWidth);
+        int statusLineCount = Math.min(3, statusLines.size());
+        int statusBlockHeight = statusLineCount * lineHeight;
+        int statusTop = buttonTop - 6 - statusBlockHeight;
+
+        int descY = dividerY + 8;
         List<OrderedText> wrapped = theme.textRenderer().wrapLines(
                 Text.literal(current.description == null ? "" : current.description), width - pad * 2);
-        int lineHeight = theme.textRenderer().fontHeight + 2;
-        for (int i = 0; i < wrapped.size() && descY + i * lineHeight < y + height - 48; i++) {
+        for (int i = 0; i < wrapped.size() && descY + (i + 1) * lineHeight < statusTop - 4; i++) {
             context.drawText(theme.textRenderer(), wrapped.get(i), x + pad, descY + i * lineHeight, theme.muted(), false);
         }
 
-        int statusY = y + height - 42;
-        int color = resolving ? theme.muted() : (chosenVersion != null ? theme.snowWhite() : theme.accent());
-        context.drawText(theme.textRenderer(), Text.literal(statusLine), x + pad, statusY, color, false);
+        int statusColor = resolving ? theme.muted() : (chosenVersion != null ? theme.snowWhite() : theme.accent());
+        for (int i = 0; i < statusLineCount; i++) {
+            context.drawText(theme.textRenderer(), statusLines.get(i), x + pad, statusTop + i * lineHeight, statusColor, false);
+        }
     }
 
     private static String rootMessage(Throwable t) {

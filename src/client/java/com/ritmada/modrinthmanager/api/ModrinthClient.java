@@ -38,6 +38,7 @@ public final class ModrinthClient {
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .version(HttpClient.Version.HTTP_2)
+            .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
     // query signature -> response, cheap 2 minute TTL cache to avoid hammering the API on every keystroke
@@ -144,7 +145,10 @@ public final class ModrinthClient {
     }
 
     public static void logError(String context, Throwable t) {
-        ModrinthManagerClient.LOGGER.error("[modrinth-manager] {}: {}", context, t.toString());
+        // pass the throwable itself (not t.toString()) so the full stack trace lands in
+        // latest.log — that's what you actually need to grep for when the GUI only shows
+        // a one-line summary.
+        ModrinthManagerClient.LOGGER.error("[modrinth-manager] {}", context, t);
     }
 
     private static final class CachedEntry<T> {
