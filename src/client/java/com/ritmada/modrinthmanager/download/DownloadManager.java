@@ -75,22 +75,46 @@ public final class DownloadManager {
                         return DownloadResult.failure("sha1 mismatch for " + file.filename + ", download discarded");
                     }
 
-                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                    moveIntoPlace(tmp, target);
                     progress.markComplete();
                     return DownloadResult.success(target);
                 } finally {
                     Files.deleteIfExists(tmp);
                 }
+            } catch (java.nio.file.AccessDeniedException e) {
+                // the #1 real-world cause on Android launchers (PojavLauncher/Fjord etc.): the app
+                // was never granted "All files access" / manage-storage, so writes into its own
+                // .minecraft/mods under /storage/emulated/0/Android/data/... get rejected outright.
+                String message = "no write access to " + e.getFile()
+                        + " — on Android, grant the launcher app \"All files access\" storage permission and retry";
+                progress.markFailed(message);
+                ModrinthClient.logError("download failed (storage permission) for " + version.projectId, e);
+                return DownloadResult.failure(message);
             } catch (Exception e) {
-                // broad on purpose: any failure here (IO, checksum, bad URI, permissions, an
-                // unexpected runtime exception from a third-party API quirk) must come back as
-                // a DownloadResult.Err with a real message instead of blowing up the future.
+                // broad on purpose: any failure here (IO, checksum, bad URI, an unexpected
+                // runtime exception from a third-party API quirk) must come back as a
+                // DownloadResult.Err with a real message instead of blowing up the future.
                 String message = e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : "");
                 progress.markFailed(message);
                 ModrinthClient.logError("download failed for " + version.projectId, e); // full stack trace goes to latest.log
                 return DownloadResult.failure(message);
             }
         }, ModrinthClient.IO);
+    }
+
+    /**
+     * Android's external storage (/storage/emulated/0/..., what PojavLauncher runs .minecraft
+     * from) is FUSE-backed and routinely rejects the atomic rename ATOMIC_MOVE needs with
+     * AccessDeniedException, even though a plain byte copy to the same path works fine.
+     * Try the fast path first, fall back to copy+delete on exactly that failure mode.
+     */
+    private static void moveIntoPlace(Path tmp, Path target) throws IOException {
+        try {
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AccessDeniedException | java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.copy(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            Files.deleteIfExists(tmp);
+        }
     }
 
     private static void downloadWithProgress(String url, Path dest, long expectedSize, DownloadProgress progress) throws IOException {

@@ -12,6 +12,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,11 +31,18 @@ public final class IconCache {
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(Duration.ofSeconds(8))
             .build();
 
     private static final Map<String, Handle> READY = new ConcurrentHashMap<>();
     private static final Set<String> IN_FLIGHT = ConcurrentHashMap.newKeySet();
-    private static final Handle MISSING = new Handle(new Identifier(ModrinthManagerClient.MOD_ID, "missing_icon"), 16, 16);
+    private static final Set<String> FAILED = ConcurrentHashMap.newKeySet();
+
+    // a real bundled placeholder (textures/gui/missing_icon.png), not an unregistered id —
+    // an unregistered identifier falls back to vanilla's magenta/black missing-texture
+    // checkerboard, which is what was actually showing up as "glitched" icons before.
+    private static final Handle MISSING = new Handle(
+            new Identifier(ModrinthManagerClient.MOD_ID, "textures/gui/missing_icon.png"), 32, 32);
 
     private IconCache() {
     }
@@ -48,6 +56,7 @@ public final class IconCache {
 
         Handle cached = READY.get(projectId);
         if (cached != null) return cached;
+        if (FAILED.contains(projectId)) return MISSING; // one attempt per session, don't hammer a dead/blocked CDN every frame
 
         if (IN_FLIGHT.add(projectId)) {
             ModrinthClient.IO.submit(() -> fetchAndRegister(projectId, iconUrl));
@@ -59,10 +68,12 @@ public final class IconCache {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(iconUrl))
                     .header("User-Agent", "Ritmada/modrinth-manager/1.0.0")
+                    .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();
             HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() != 200) {
+                FAILED.add(projectId);
                 IN_FLIGHT.remove(projectId);
                 return;
             }
@@ -85,9 +96,10 @@ public final class IconCache {
                 }
             });
         } catch (Exception e) {
-            // bad/unsupported image format (e.g. a non-PNG icon), network hiccup, whatever —
-            // just fall back to the placeholder instead of leaving this project stuck retrying.
+            // bad/unsupported image format (e.g. a non-PNG icon), network hiccup, blocked CDN
+            // domain, whatever — fall back to the placeholder once instead of retrying forever.
             ModrinthClient.logError("icon fetch failed for " + projectId, e);
+            FAILED.add(projectId);
             IN_FLIGHT.remove(projectId);
         }
     }
